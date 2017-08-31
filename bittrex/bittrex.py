@@ -5,6 +5,7 @@
 import time
 import hmac
 import hashlib
+import json
 try:
     from urllib import urlencode
     from urlparse import urljoin
@@ -19,7 +20,6 @@ except ImportError:
 else:
     import getpass
     import ast
-    import json
     encrypted = True
 
 import requests
@@ -50,6 +50,10 @@ ACCOUNT_SET = {
     'getdeposithistory',
     'getwithdrawalhistory'
 }
+
+
+class BittrexError(Exception):
+    """An error occurred within the Bittrex instance"""
 
 
 def encrypt(api_key, api_secret, export=True, export_fn='secrets.json'):
@@ -209,24 +213,6 @@ class Bittrex(object):
         :rtype : dict
         """
         return self.api_query('getmarketsummary', {'market': market})
-
-    def get_markets_for_currency(self, currency):
-        """
-        Helper function to see which markets exist for a currency.
-
-        Endpoint: /public/getmarkets
-
-        Example ::
-            >>> Bittrex(None, None).get_markets_for_currency('LTC')
-            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
-
-        :param currency: String literal for the currency (ex: LTC)
-        :type currency: str
-        :return: List of markets that the currency appears in
-        :rtype: list
-        """
-        return [market['MarketName'] for market in self.get_markets()['result']
-                if market['MarketName'].lower().endswith(currency.lower())]
 
     def get_orderbook(self, market, depth_type, depth=20):
         """
@@ -494,3 +480,84 @@ class Bittrex(object):
         """
         return self.api_query('getdeposithistory',
                               {'currency': currency} if currency else None)
+
+    @classmethod
+    def from_secrets(cls, secrets_file="secrets.json", is_encrypted=False):
+        """
+        Load a Bittrex instance from an existing secrets file.
+
+        :param secrets_file: path to the file containing key and secret
+        :type secrets_file: str
+        :param is_encrypted: set to True to automatically decrypt encrypted
+            secret files
+        :type is_encrypted: bool
+        :return: Bittrex instance
+        """
+        with open(secrets_file) as f:
+            data = json.load(f)
+        my_bittrex = cls(data['key'], data['secret'])
+        if is_encrypted:
+            my_bittrex.decrypt()
+        return my_bittrex
+
+    def list_markets_by_currency(self, currency):
+        """
+        Helper function to see which markets exist for a currency.
+
+        Endpoint: /public/getmarkets
+
+        Example ::
+            >>> Bittrex(None, None).list_markets_by_currency('LTC')
+            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
+
+        :param currency: String literal for the currency (ex: LTC)
+        :type currency: str
+        :return: List of markets that the currency appears in
+        :rtype: list
+        """
+        return [market['MarketName'] for market in self.get_markets()['result']
+                if market['MarketName'].lower().endswith(currency.lower())]
+
+    def estimate_usd_value(self, currency, amount=None):
+        """
+        Determine the Ask, Bid, and Last amounts as USD of a currency via USDT
+        or BTC markets.
+
+        Example ::
+            >>> my_bittrex = Bittrex.from_secrets()
+            >>> my_bittrex.estimate_usd_value('BTC', 1)
+            {'Ask': 4710.0, 'Last': 4702.01100001, 'Bid': 4702.11300001}
+
+            # Use the amount in your account
+            >>> my_bittrex.estimate_usd_value('1ST')
+            {'Ask': 11.385085, 'Last': 11.330919999999995, 'Bid': 10.7448225}
+
+
+        :param currency: String literal for the currency (ex: LTC)
+        :type currency: str
+        :param amount: Quantity of coin, defaults to account balance
+        :type amount: float or int
+        :return: Ask, Bid and Last USD amounts in a dictionary
+        :rtype: dict
+        """
+        if not amount:
+            amount = self.get_balance(currency)['result']['Balance']
+            if not amount:
+                raise BittrexError("You do not have any {}".format(currency))
+
+        def update(market, multiplier):
+            mark = self.get_marketsummary(market)['result'][0]
+            return {x: mark[x] * multiplier for x in ('Ask', 'Last', 'Bid')}
+
+        markets = self.list_markets_by_currency(currency)
+        if "USDT-{}".format(currency) in markets:
+            return update("USDT-{}".format(currency), amount)
+        elif "BTC-{}".format(currency) in markets:
+            btc_usd_value = update("USDT-BTC", multiplier=1)
+            currency_btc_value = update("BTC-{}".format(currency), amount)
+            return {x: btc_usd_value[x] * currency_btc_value[x]
+                    for x in ('Ask', 'Last', 'Bid')}
+        else:
+            raise BittrexError("{} does not have a USDT or "
+                               "BTC market".format(currency))
+
