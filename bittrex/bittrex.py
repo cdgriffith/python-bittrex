@@ -355,7 +355,7 @@ class Bittrex(object):
         :rtype : dict
         """
         return self.api_query('getopenorders',
-                              {'market': market} if market else {})
+                              {'market': market} if market else None)
 
     def get_balances(self):
         """
@@ -450,10 +450,8 @@ class Bittrex(object):
         :return: order history in JSON
         :rtype : dict
         """
-        if not market:
-            return self.api_query('getorderhistory')
-        else:
-            return self.api_query('getorderhistory', {'market': market})
+        return self.api_query('getorderhistory',
+                              {'market': market} if market else None)
 
     def get_order(self, uuid):
         """
@@ -480,8 +478,8 @@ class Bittrex(object):
         :rtype : dict
         """
 
-        params = {'currency': currency} if currency is not None else {}
-        return self.api_query('getwithdrawalhistory', params)
+        return self.api_query('getwithdrawalhistory',
+                              {'currency': currency} if currency else None)
 
     def get_deposit_history(self, currency=None):
         """
@@ -494,5 +492,5 @@ class Bittrex(object):
         :return: deposit history in JSON
         :rtype : dict
         """
-        params = {'currency': currency} if currency is not None else {}
-        return self.api_query('getdeposithistory', params)
+        return self.api_query('getdeposithistory',
+                              {'currency': currency} if currency else None)
