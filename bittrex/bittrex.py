@@ -210,24 +210,6 @@ class Bittrex(object):
         """
         return self.api_query('getmarketsummary', {'market': market})
 
-    def get_markets_for_currency(self, currency):
-        """
-        Helper function to see which markets exist for a currency.
-
-        Endpoint: /public/getmarkets
-
-        Example ::
-            >>> Bittrex(None, None).get_markets_for_currency('LTC')
-            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
-
-        :param currency: String literal for the currency (ex: LTC)
-        :type currency: str
-        :return: List of markets that the currency appears in
-        :rtype: list
-        """
-        return [market['MarketName'] for market in self.get_markets()['result']
-                if market['MarketName'].lower().endswith(currency.lower())]
-
     def get_orderbook(self, market, depth_type, depth=20):
         """
         Used to get retrieve the orderbook for a given market
@@ -494,3 +476,21 @@ class Bittrex(object):
         """
         return self.api_query('getdeposithistory',
                               {'currency': currency} if currency else None)
+
+    def list_markets_by_currency(self, currency):
+        """
+        Helper function to see which markets exist for a currency.
+
+        Endpoint: /public/getmarkets
+
+        Example ::
+            >>> Bittrex(None, None).list_markets_by_currency('LTC')
+            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
+
+        :param currency: String literal for the currency (ex: LTC)
+        :type currency: str
+        :return: List of markets that the currency appears in
+        :rtype: list
+        """
+        return [market['MarketName'] for market in self.get_markets()['result']
+                if market['MarketName'].lower().endswith(currency.lower())]
