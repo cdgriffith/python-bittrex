@@ -20,8 +20,9 @@ my_bittrex.get_markets()
 ```
 
 To access account methods, an API key for your account is required and can be 
-generated on the Settings \> API Keys page. Make sure you save the secret, as 
-it will not be visible after navigating away from the page. 
+generated on the `Settings` then `API Keys` page. 
+Make sure you save the secret, as it will not be visible 
+after navigating away from the page. 
 
 ```python
 from bittrex import Bittrex
