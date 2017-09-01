@@ -31,6 +31,7 @@ log = logging.getLogger('bittrex')
 BUY_ORDERBOOK = 'buy'
 SELL_ORDERBOOK = 'sell'
 BOTH_ORDERBOOK = 'both'
+ABL = ('Ask', 'Bid', 'Last')
 
 BASE_URL = 'https://bittrex.com/api/v1.1/{method_set}/{method}?'
 
@@ -564,11 +565,9 @@ class Bittrex(object):
             raise BittrexError("{} does not have a USDT or "
                                "BTC market".format(currency))
 
-    def estimate_account_usd_value(self, delay=2, ignore=0.00001):
+    def estimate_account_usd_value(self):
         """
-        Use your account balances to estimate total value in USD. Can
-        chose to ignore balances under a certain amount and how long
-        to wait between api requests.
+        Use your account balances to estimate total value in USD.
 
         Example ::
 
@@ -583,34 +582,29 @@ class Bittrex(object):
              'ARK': ...
              }
 
-
-        :param delay:
-        :param ignore:
-        :return:
+        :return: Dictionary of all appropriate USD values
+        :rtype: dict
         """
-        #  TODO update to use get_market_summaries()
         output = {"sums": {"Ask": 0, "Last": 0, "Bid": 0}}
+        markets = {x['MarketName']: x
+                   for x in self.get_market_summaries()['result']}
+        btc_usd = {x: markets['USDT-BTC'][x] for x in ABL}
+
+        def calculate(market, amount):
+            return {x: btc_usd[x] * market[x] * amount for x in ABL}
+
         for result in self.get_balances()['result']:
             currency, balance = result['Currency'], result['Balance']
-            if balance < ignore:
-                log.debug("{} has less than {} in it, "
-                          "ignoring".format(currency, ignore))
-                continue
             if currency == 'USDT':
                 output['USDT'] = {'Ask':  balance, 'Bid': balance,
                                   'Last': balance}
-            else:
-                time.sleep(delay)
-                log.debug("About to grab estimate for {}".format(currency))
-                try:
-                    output[currency] = self.estimate_usd_value(
-                        currency, balance)
-                except BittrexError as err:
-                    log.error("Could not grab value for "
-                              "{} - {}".format(currency, err))
-                    continue
+            elif currency == 'BTC':
+                output['BTC'] = calculate(btc_usd, balance)
+            elif "BTC-{}".format(currency) in markets:
+                btc_market = markets["BTC-{}".format(currency)]
+                output[currency] = calculate(btc_market, balance)
 
-            for indicator in ('Ask', "Last", "Bid"):
+            for indicator in ABL:
                 output["sums"][indicator] += output[currency][indicator]
         return output
 
