@@ -6,6 +6,8 @@ import time
 import hmac
 import hashlib
 import json
+import logging
+
 try:
     from urllib import urlencode
     from urlparse import urljoin
@@ -24,6 +26,7 @@ else:
 
 import requests
 
+log = logging.getLogger('bittrex')
 
 BUY_ORDERBOOK = 'buy'
 SELL_ORDERBOOK = 'sell'
@@ -481,6 +484,24 @@ class Bittrex(object):
         return self.api_query('getdeposithistory',
                               {'currency': currency} if currency else None)
 
+    def list_markets_by_currency(self, currency):
+        """
+        Helper function to see which markets exist for a currency.
+
+        Endpoint: /public/getmarkets
+
+        Example ::
+            >>> Bittrex(None, None).list_markets_by_currency('LTC')
+            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
+
+        :param currency: String literal for the currency (ex: LTC)
+        :type currency: str
+        :return: List of markets that the currency appears in
+        :rtype: list
+        """
+        return [market['MarketName'] for market in self.get_markets()['result']
+                if market['MarketName'].lower().endswith(currency.lower())]
+
     @classmethod
     def from_secrets(cls, secrets_file="secrets.json", is_encrypted=False):
         """
@@ -499,24 +520,6 @@ class Bittrex(object):
         if is_encrypted:
             my_bittrex.decrypt()
         return my_bittrex
-
-    def list_markets_by_currency(self, currency):
-        """
-        Helper function to see which markets exist for a currency.
-
-        Endpoint: /public/getmarkets
-
-        Example ::
-            >>> Bittrex(None, None).list_markets_by_currency('LTC')
-            ['BTC-LTC', 'ETH-LTC', 'USDT-LTC']
-
-        :param currency: String literal for the currency (ex: LTC)
-        :type currency: str
-        :return: List of markets that the currency appears in
-        :rtype: list
-        """
-        return [market['MarketName'] for market in self.get_markets()['result']
-                if market['MarketName'].lower().endswith(currency.lower())]
 
     def estimate_usd_value(self, currency, amount=None):
         """
@@ -545,19 +548,69 @@ class Bittrex(object):
             if not amount:
                 raise BittrexError("You do not have any {}".format(currency))
 
-        def update(market, multiplier):
+        def calculate(market, multiplier):
             mark = self.get_marketsummary(market)['result'][0]
             return {x: mark[x] * multiplier for x in ('Ask', 'Last', 'Bid')}
 
         markets = self.list_markets_by_currency(currency)
         if "USDT-{}".format(currency) in markets:
-            return update("USDT-{}".format(currency), amount)
+            return calculate("USDT-{}".format(currency), amount)
         elif "BTC-{}".format(currency) in markets:
-            btc_usd_value = update("USDT-BTC", multiplier=1)
-            currency_btc_value = update("BTC-{}".format(currency), amount)
+            btc_usd_value = calculate("USDT-BTC", multiplier=1)
+            currency_btc_value = calculate("BTC-{}".format(currency), amount)
             return {x: btc_usd_value[x] * currency_btc_value[x]
                     for x in ('Ask', 'Last', 'Bid')}
         else:
             raise BittrexError("{} does not have a USDT or "
                                "BTC market".format(currency))
+
+    def estimate_account_usd_value(self, delay=2, ignore=0.00001):
+        """
+        Use your account balances to estimate total value in USD. Can
+        chose to ignore balances under a certain amount and how long
+        to wait between api requests.
+
+        Example ::
+
+            >>> my_bittrex.estimate_account_usd_value()
+
+            {'sums': {'Ask': 29.074991349122,
+                      'Last': 25.0713173339878,
+                      'Bid': 24.7381929556554},
+             '1ST':  {'Ask': 11.043874411999997,
+                      'Last': 11.079242642,
+                      'Bid': 10.671075},
+             'ARK': ...
+             }
+
+
+        :param delay:
+        :param ignore:
+        :return:
+        """
+        #  TODO update to use get_market_summaries()
+        output = {"sums": {"Ask": 0, "Last": 0, "Bid": 0}}
+        for result in self.get_balances()['result']:
+            currency, balance = result['Currency'], result['Balance']
+            if balance < ignore:
+                log.debug("{} has less than {} in it, "
+                          "ignoring".format(currency, ignore))
+                continue
+            if currency == 'USDT':
+                output['USDT'] = {'Ask':  balance, 'Bid': balance,
+                                  'Last': balance}
+            else:
+                time.sleep(delay)
+                log.debug("About to grab estimate for {}".format(currency))
+                try:
+                    output[currency] = self.estimate_usd_value(
+                        currency, balance)
+                except BittrexError as err:
+                    log.error("Could not grab value for "
+                              "{} - {}".format(currency, err))
+                    continue
+
+            for indicator in ('Ask', "Last", "Bid"):
+                output["sums"][indicator] += output[currency][indicator]
+        return output
 
