@@ -596,15 +596,12 @@ class Bittrex(object):
         for result in self.get_balances()['result']:
             currency, balance = result['Currency'], result['Balance']
             if currency == 'USDT':
-                output['USDT'] = {'Ask':  balance, 'Bid': balance,
-                                  'Last': balance}
+                output['USDT'] = {x: balance for x in ABL}
             elif currency == 'BTC':
-                output['BTC'] = calculate(btc_usd, balance)
+                output['BTC'] = {x: btc_usd[x] * balance for x in ABL}
             elif "BTC-{}".format(currency) in markets:
                 btc_market = markets["BTC-{}".format(currency)]
                 output[currency] = calculate(btc_market, balance)
-
             for indicator in ABL:
                 output["sums"][indicator] += output[currency][indicator]
         return output
-
