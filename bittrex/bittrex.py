@@ -605,3 +605,44 @@ class Bittrex(object):
             for indicator in ABL:
                 output["sums"][indicator] += output[currency][indicator]
         return output
+
+    def estimate_account_btc_value(self):
+        """
+        Use your account balances to estimate total value in BTC.
+
+        Example ::
+
+            >>> my_bittrex.estimate_account_btc_value()
+
+            {'sums': {'Ask': 29.074991349122,
+                      'Last': 25.0713173339878,
+                      'Bid': 24.7381929556554},
+             '1ST':  {'Ask': 11.043874411999997,
+                      'Last': 11.079242642,
+                      'Bid': 10.671075},
+             'ARK': ...
+             }
+
+        :return: Dictionary of all appropriate BTC values
+        :rtype: dict
+        """
+        output = {"sums": {"Ask": 0, "Last": 0, "Bid": 0}}
+        markets = {x['MarketName']: x
+                   for x in self.get_market_summaries()['result']}
+        btc_usd = {x: markets['USDT-BTC'][x] for x in ABL}
+
+        def calculate(market, amount):
+            return {x: market[x] * amount for x in ABL}
+
+        for result in self.get_balances()['result']:
+            currency, balance = result['Currency'], result['Balance']
+            if currency == 'USDT':
+                output['USDT'] = {x: btc_usd[x] * balance for x in ABL}
+            elif currency == 'BTC':
+                output['BTC'] = {x: balance for x in ABL}
+            elif "BTC-{}".format(currency) in markets:
+                btc_market = markets["BTC-{}".format(currency)]
+                output[currency] = calculate(btc_market, balance)
+            for indicator in ABL:
+                output["sums"][indicator] += output[currency][indicator]
+        return output
